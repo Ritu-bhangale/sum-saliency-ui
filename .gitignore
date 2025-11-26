@@ -29,3 +29,8 @@ tmp/
 images/
 **/sum_model.pth
 
+# model weights
+model_zoo/*
+!model_zoo/README.md
+
+model_zoo/*
