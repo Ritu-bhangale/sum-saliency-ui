@@ -1,0 +1,11 @@
+scikit-image
+packaging
+monai
+opencv-python==4.6.0.66
+pandas
+scikit-learn
+matplotlib
+h5py
+yacs
+timm
+huggingface_hub

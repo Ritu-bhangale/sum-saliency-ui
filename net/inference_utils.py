@@ -34,37 +34,75 @@ def predict_saliency_map(img, condition, model, device):
 
 
 def overlay_heatmap_on_image(original_img_path, heatmap_img_path, output_img_path):
-    # Read the original image
-    orig_image = cv2.imread(original_img_path)
-    orig_size = orig_image.shape[:2]  # Height, Width
+    """
+    Create a sparse, spot-like overlay similar to online tools:
+    - keep only top X% saliency
+    - blur to get blobs
+    - blend with per-pixel alpha
+    """
+    # Read original
+    orig = cv2.imread(original_img_path)
+    if orig is None:
+        raise RuntimeError(f"Could not read original image: {original_img_path}")
+    H, W = orig.shape[:2]
 
-    # Read the heatmap image
-    overlay_heatmap = cv2.imread(heatmap_img_path, cv2.IMREAD_GRAYSCALE)
+    # Read grayscale heatmap (written by write_heatmap_to_image)
+    hmap = cv2.imread(heatmap_img_path, cv2.IMREAD_GRAYSCALE)
+    if hmap is None:
+        raise RuntimeError(f"Could not read heatmap image: {heatmap_img_path}")
 
-    # Resize the heatmap to match the original image size
-    overlay_heatmap = cv2.resize(overlay_heatmap, (orig_size[1], orig_size[0]))
+    hmap = cv2.resize(hmap, (W, H), interpolation=cv2.INTER_AREA)
+    hmap = hmap.astype(np.float32) / 255.0
 
-    # Apply color map to the heatmap
-    overlay_heatmap = cv2.applyColorMap(overlay_heatmap, cv2.COLORMAP_JET)
+    # Keep only top X% of saliency
+    # Try 0.85–0.9; lower = more area highlighted
+    keep_top = 0.88
+    thr = np.quantile(hmap, keep_top)
+    mask = np.clip((hmap - thr) / (1.0 - thr + 1e-6), 0.0, 1.0)
 
-    # Overlay the heatmap on the original image
-    overlay_image = cv2.addWeighted(orig_image, 1, overlay_heatmap, 0.8, 0)
+    # Smooth to get nicer blobs
+    mask = cv2.GaussianBlur(mask, (41, 41), 0)
 
-    # Save the result
-    cv2.imwrite(output_img_path, overlay_image)
+    # Optional extra sharpening of hotspots
+    mask = np.power(mask, 1.2)
+
+    # Convert mask to color map
+    mask_uint8 = (mask * 255).astype(np.uint8)
+    color = cv2.applyColorMap(mask_uint8, cv2.COLORMAP_JET)
+
+    # Normalize to [0,1] for blending
+    orig_f = orig.astype(np.float32) / 255.0
+    color_f = color.astype(np.float32) / 255.0
+
+    # Per-pixel alpha: strong saliency = more color
+    strength = 0.85  # global max opacity of heatmap
+    alpha = (mask * strength)[..., None]  # H x W x 1
+
+    out = orig_f * (1.0 - alpha) + color_f * alpha
+    out = (out * 255).clip(0, 255).astype(np.uint8)
+
+    cv2.imwrite(output_img_path, out)
 
 
 def write_heatmap_to_image(heatmap, orig_size, output_path):
-    plt.figure()
-    plt.imshow(heatmap, cmap="hot")
-    plt.axis("off")
+    """
+    Save a sparse, blob-like heatmap (no overlay here yet).
+    This image is just an intermediate; the nice overlay is done later.
+    """
+    # Normalize to [0, 1]
+    heatmap = heatmap - heatmap.min()
+    max_val = heatmap.max()
+    if max_val > 0:
+        heatmap = heatmap / max_val
 
-    buf = io.BytesIO()
-    plt.savefig(buf, format="png", bbox_inches="tight", pad_inches=0)
-    buf.seek(0)
-    plt.close()
+    # Optional sharpening of peaks
+    gamma = 1.5  # >1 makes peaks sharper
+    heatmap = np.power(heatmap, gamma)
 
-    img = Image.open(buf)
-    img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGBA2BGR)
-    img_resized = cv2.resize(img_cv, orig_size, interpolation=cv2.INTER_AREA)
-    cv2.imwrite(output_path, img_resized)
+    # Resize to original size (width, height)
+    w, h = orig_size
+    heatmap_resized = cv2.resize(heatmap, (w, h), interpolation=cv2.INTER_AREA)
+
+    # Save as grayscale for later processing
+    heatmap_uint8 = (heatmap_resized * 255).astype(np.uint8)
+    cv2.imwrite(output_path, heatmap_uint8)

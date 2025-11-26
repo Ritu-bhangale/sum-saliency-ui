@@ -9,6 +9,7 @@ import torch.utils.checkpoint as checkpoint
 from einops import rearrange, repeat
 from timm.models.layers import DropPath, trunc_normal_
 
+
 try:
     from mamba_ssm.ops.selective_scan_interface import selective_scan_fn, selective_scan_ref
 except:
@@ -20,6 +21,51 @@ try:
     from selective_scan import selective_scan_ref as selective_scan_ref_v1
 except:
     pass
+
+# ------------------------------------------------------------------
+# Fallback: if no selective_scan kernel is available, use a dummy op
+# This is ONLY to make inference run on mac; heatmaps will be approximate.
+# ------------------------------------------------------------------
+if "selective_scan_fn" not in globals():
+    print(
+        "[WARNING] mamba_ssm/selective_scan not available. "
+        "Using a dummy selective_scan_fn fallback. "
+        "Results may differ from the original paper implementation.",
+        flush=True,
+    )
+
+    def selective_scan_fn(
+        xs,
+        dts,
+        As,
+        Bs,
+        Cs,
+        Ds,
+        z=None,
+        delta_bias=None,
+        delta_softplus=True,
+        return_last_state=False,
+    ):
+        """
+        Very simple fallback: just pass xs through.
+        Shapes:
+          xs: (B, K*D, L)
+          dts, As, Bs, Cs, Ds, z, delta_bias are ignored here.
+
+        This keeps tensor shapes compatible with the rest of the model,
+        but does NOT implement real Mamba dynamics.
+        """
+        y = xs  # (B, K*D, L)
+
+        if return_last_state:
+            # Dummy last_state with plausible shape: (B, K*D, N)
+            B, KD, L = xs.shape
+            N = As.shape[-1] if As is not None else 1
+            last_state = xs.new_zeros((B, KD, N))
+            return y, last_state
+
+        return y
+
 
 DropPath.__repr__ = lambda self: f"timm.DropPath({self.drop_prob})"
 
