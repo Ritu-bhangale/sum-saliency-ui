@@ -25,3 +25,7 @@ mamba_ssm/*.so
 *.log
 *.DS_Store
 
+tmp/
+images/
+**/sum_model.pth
+
