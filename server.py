@@ -2,11 +2,16 @@
 import os
 import uuid
 from pathlib import Path
+import io
+import numpy as np
+
 
 import torch
 from fastapi import FastAPI, UploadFile, File, Form
+from PIL import Image
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from models.registry import get_model, list_models
 
 
 from inference import (
@@ -85,3 +90,22 @@ async def predict(
         media_type="image/png",
         filename="overlay.png",
     )
+
+@app.get("/models")
+def models_list():
+    return {"models": list_models()}
+
+@app.post("/predict_from_model")
+async def predict_from_model(model_name: str = Form(...), condition: int = Form(3), file: UploadFile = File(...)):
+    contents = await file.read()
+    img = Image.open(io.BytesIO(contents)).convert("RGB")
+    predict_fn = get_model(model_name)
+    sal_map = predict_fn(img, int(condition))  # numpy array HxW
+    # save to tmp and return path, or encode to PNG
+    import base64
+    from io import BytesIO
+    import matplotlib.pyplot as plt
+    buf = BytesIO()
+    plt.imsave(buf, sal_map, cmap="hot", format="png")
+    buf.seek(0)
+    return {"saliency_png_base64": base64.b64encode(buf.read()).decode("ascii")}

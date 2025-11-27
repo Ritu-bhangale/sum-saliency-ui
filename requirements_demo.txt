@@ -9,3 +9,11 @@ h5py
 yacs
 timm
 huggingface_hub
+# For DeepGaze baseline
+numpy
+pillow
+
+# For Keras-based wrappers
+tensorflow==2.12.0            # or tensorflow-macos/tensorflow-metal if on macOS with MPS
+h5py
+matplotlib                     # for plt.imsave used in server response
