@@ -34,3 +34,7 @@ model_zoo/*
 !model_zoo/README.md
 
 model_zoo/*
+model_zoo/*
+!model_zoo/README.md
+model_zoo/*
+!model_zoo/README.md
